@@ -24,15 +24,21 @@ class radon(torch.nn.Module):
     def __init__(self, n_angles=1000, image_size=400, device="cuda"):
         super(radon, self).__init__()
         self.n_angles=n_angles
+        self.device = device
+        self.image_size = image_size
         # get angles 
         thetas = torch.linspace(0, np.pi-(np.pi/n_angles), n_angles)[:,None,None].to(device)
+        print(thetas.shape)
         cos_al, sin_al = thetas.cos(), thetas.sin()
         zeros = torch.zeros_like(cos_al).to(device)
         # calculate rotations
         rotations = torch.stack((cos_al,sin_al,zeros,-sin_al, cos_al,zeros),-1).reshape(-1,2,3)
+        print(rotations.shape)
+        #print(rotations)
         self.rotated = torch.nn.functional.affine_grid(rotations, torch.Size([n_angles, 1, image_size, image_size]), align_corners=True).reshape(1,-1,image_size,2)
-
-    def forward(self, image):
+        print(self.rotated.shape)
+        
+    def forward(self, image, thetas):
         '''Apply radon transformation on input image.
 
         Args:
@@ -42,9 +48,24 @@ class radon(torch.nn.Module):
             out (torch.tensor, (bzs, 1, W, angles)): sinogram 
         '''
         bsz, _, shape_size, _ = image.shape
-        out_fl = torch.nn.functional.grid_sample(image, self.rotated.repeat(bsz,1,1,1), align_corners=True).reshape(bsz,1,self.n_angles,shape_size,shape_size)
+        
+        #thetas = torch.linspace(0, np.pi-(np.pi/self.n_angles), self.n_angles)[:,None,None].to(self.device).unsqueeze(0)
+        cos_al, sin_al = thetas.cos(), thetas.sin()
+        zeros = torch.zeros_like(cos_al).to(self.device)
+        rotations = torch.stack((cos_al,sin_al,zeros,-sin_al, cos_al,zeros),-1).reshape(-1,2,3)
+        
+        
+        self.rotated = torch.nn.functional.affine_grid(rotations, torch.Size([self.n_angles*bsz, 1, self.image_size, self.image_size]), align_corners=True).reshape(bsz,-1,self.image_size,2)
+        #self.rotated = self.rotated.view(bsz, -1, self.image_size, 2)
+        out_fl = torch.nn.functional.grid_sample(image, self.rotated, align_corners=True).reshape(bsz,1,self.n_angles,shape_size,shape_size)
         out = out_fl.sum(3)
         return out
+    
+    def forward_(self, image, theta):
+        thetas = torch.linspace(0, np.pi-(np.pi/n_angles), n_angles)[:,None,None].to(device).unsqueeze(0)
+        cos_al, sin_al = thetas.cos(), thetas.sin()
+        zeros = torch.zeros_like(cos_al).to(device)
+        rotations = torch.stack((cos_al,sin_al,zeros,-sin_al, cos_al,zeros),-1).reshape(-1,2,3)
 
 
 class fbp(torch.nn.Module):
